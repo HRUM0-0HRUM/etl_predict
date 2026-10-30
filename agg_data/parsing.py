@@ -72,9 +72,11 @@ def collect_links(driver):
     while stagnant < 5:
         # плавный скролл вниз, чтобы сработала подгрузка
         for _ in range(6):
-            driver.execute_script("window.scrollBy(0, window.innerHeight * 0.8);")
-            time.sleep(random.uniform(0.6, 1.2))
-        time.sleep(random.uniform(1.5, 3.0))
+            driver.execute_script("window.scrollBy(0, window.innerHeight * 1.2);")
+            time.sleep(random.uniform(1.0, 2.0))
+
+
+        time.sleep(random.uniform(2.5, 4.0))
 
         before = len(items)
         for card in driver.find_elements(By.CSS_SELECTOR, SEL["card"]):
@@ -124,10 +126,14 @@ def get_specs(driver, url):
     if not open_page(driver, url, SEL["group"]):
         raise RuntimeError("страница товара не загрузилась")
 
+    
+
     # характеристики подгружаются при скролле
     for _ in range(5):
-        driver.execute_script("window.scrollBy(0, window.innerHeight * 0.8);")
-        time.sleep(random.uniform(0.5, 1.0))
+        driver.execute_script("window.scrollBy(0, window.innerHeight * 1.2);")
+        time.sleep(random.uniform(1.0, 2.0))
+
+
     expand_specs(driver)
 
     specs = {}
@@ -172,22 +178,77 @@ def main():
         for i, item in enumerate(links.to_dict("records"), 1):
             if item["url"] in done:
                 continue
-            try:
-                specs = get_specs(driver, item["url"])
-            except Exception as e:
-                print(f"[{i}/{total}] ошибка {item['url']}: {e}")
+
+            # 1. ЛЕГКАЯ ОЧИСТКА ПАМЯТИ каждые 5 товаров (без перезапуска, безопасно)
+            if i > 1 and (i - 1) % 5 == 0:
+                try:
+                    driver.execute_script("window.localStorage.clear(); window.sessionStorage.clear();")
+                    driver.delete_all_cookies()
+                except Exception:
+                    pass # Игнорируем ошибки очистки, если страница еще не до конца загружена
+
+            # 2. ПОЛНЫЙ ПЕРЕЗАПУСК каждые 15 товаров (чаще, чем было)
+            if i > 1 and (i - 1) % 15 == 0:
+                print(f"\n[Система] Плановый перезапуск браузера (обработано {i-1} товаров)...")
+                try:
+                    driver.quit()
+                except Exception:
+                    pass
+                time.sleep(3)
+                driver = uc.Chrome()
+
+            success = False
+
+            # Делаем максимум 2 попытки: основная + одна резервная с перезапуском
+            for attempt in range(2):
+                try:
+                    # ВАЖНО: Пауза ПЕРЕД открытием страницы сбивает простые анти-бот проверки
+                    pause(2.0, 5.0) 
+                    
+                    specs = get_specs(driver, item["url"])
+                    success = True
+                    break  # Если успешно, выходим из цикла попыток
+                    
+                except Exception as e:
+                    print(f"[{i}/{total}] Попытка {attempt+1} не удалась: {e}")
+                    
+                    if attempt == 0:
+                        print("[Система] Попытка восстановления: перезапуск браузера...")
+                        try:
+                            driver.quit()
+                        except Exception:
+                            pass
+                        
+                        time.sleep(5)  # Даём системе "остыть"
+                        
+                        try:
+                            driver = uc.Chrome()
+                        except Exception as uc_err:
+                            print(f"[Критическая ошибка] Не удалось запустить браузер: {uc_err}")
+                            print("[Система] Ждём 15 секунд перед повторной инициализацией...")
+                            time.sleep(15)
+                            driver = uc.Chrome() # Последняя попытка поднять браузер
+            
+            # Если обе попытки провалились, просто пропускаем товар и идём дальше
+            if not success:
+                print(f"[{i}/{total}] ⚠️ Пропуск товара (не удалось загрузить после 2 попыток): {item['url']}")
                 continue
+
             rows.append({**item, **specs,
                          "scraped_at": datetime.now().isoformat(timespec="seconds")})
             print(f"[{i}/{total}] {item['name']} ({len(specs)} характеристик)")
-            if len(rows) % 10 == 0:
-                pd.DataFrame(rows).to_csv(OUT_FILE, index=False, encoding="utf-8-sig")
-            pause()
+            
+            pd.DataFrame(rows).to_csv(OUT_FILE, index=False, encoding="utf-8-sig")
+            
+            pause(3.0, 7.0)
 
-        pd.DataFrame(rows).to_csv(OUT_FILE, index=False, encoding="utf-8-sig")
+        
         print(f"Готово: {len(rows)} товаров -> {OUT_FILE}")
     finally:
-        driver.quit()
+        try:
+            driver.quit()
+        except Exception:
+            pass
 
 
 if __name__ == "__main__":
