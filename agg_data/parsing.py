@@ -29,7 +29,7 @@ MAX_PAGES = 30              # предохранитель для постран
 MAX_NEW_PER_SEGMENT = 300   # предохранитель на один бренд
 TRIM_DOM = True             # если число ссылок перестаёт расти раньше времени, поставьте False
 NO_IMAGES = True            # без картинок меньше памяти и трафика
-COLLECT_MORE = True         # True: дособрать ссылки по всем сегментам; False: взять links.csv как есть
+COLLECT_MORE = False         # True: дособрать ссылки по всем сегментам; False: взять links.csv как есть
 
 SEL = {
     "card": "div.catalog-product",
