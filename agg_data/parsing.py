@@ -126,15 +126,52 @@ def get_specs(driver, url):
     if not open_page(driver, url, SEL["group"]):
         raise RuntimeError("страница товара не загрузилась")
 
+    # "ЧЕЛОВЕЧНЫЙ" СКРОЛЛ: плавный, с вариативностью, до конкретных элементов
+    last_height = driver.execute_script("return document.body.scrollHeight")
+    scroll_attempts = 0
+    max_scroll_attempts = 15
+    no_change_count = 0  # Счётчик скроллов без подгрузки нового контента
+
+    while scroll_attempts < max_scroll_attempts:
+        # Случайная высота скролла (имитация человеческого поведения)
+        scroll_amount = random.randint(300, 700)
+        
+        # Плавный скролл
+        driver.execute_script(f"window.scrollBy({{top: {scroll_amount}, behavior: 'smooth'}});")
+        time.sleep(random.uniform(0.8, 1.8))
+        
+        # Проверяем, появились ли характеристики
+        groups = driver.find_elements(By.CSS_SELECTOR, SEL["group"])
+        if len(groups) >= 3:
+            break
+        
+        # Проверяем, подгрузился ли новый контент (сравниваем высоту страницы)
+        new_height = driver.execute_script("return document.body.scrollHeight")
+        
+        if new_height == last_height:
+            # Высота не изменилась — контент не подгружается
+            no_change_count += 1
+            if no_change_count >= 2:
+                # Делаем "отскок" вверх-вниз, чтобы триггернуть ленивую загрузку
+                driver.execute_script(f"window.scrollBy({{top: -200, behavior: 'smooth'}});")
+                time.sleep(random.uniform(0.5, 1.0))
+                driver.execute_script(f"window.scrollBy({{top: 400, behavior: 'smooth'}});")
+                time.sleep(random.uniform(0.8, 1.5))
+                no_change_count = 0  # Сбрасываем счётчик после отскока
+        else:
+            # Контент подгрузился, обновляем last_height
+            last_height = new_height
+            no_change_count = 0
+        
+        scroll_attempts += 1
     
-
-    # характеристики подгружаются при скролле
-    for _ in range(5):
-        driver.execute_script("window.scrollBy(0, window.innerHeight * 1.2);")
-        time.sleep(random.uniform(1.0, 2.0))
-
+    # Дополнительная пауза перед раскрытием характеристик
+    time.sleep(random.uniform(1.0, 2.0))
 
     expand_specs(driver)
+
+     # Финальная пауза после раскрытия
+    time.sleep(random.uniform(1.5, 2.5))
 
     specs = {}
     for group in driver.find_elements(By.CSS_SELECTOR, SEL["group"]):
