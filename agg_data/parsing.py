@@ -41,6 +41,7 @@ SEL = {
     "group_title": ".product-characteristics__group-title",
     "spec_title": "div.product-characteristics__spec-title",
     "spec_value": "div.product-characteristics__spec-value",
+    "ready": "h1",
 }
 
 JS_HARVEST = """
@@ -169,6 +170,28 @@ def collect_links():
 
 
 # ================= ЭТАП 2: ХАРАКТЕРИСТИКИ =================
+def scroll_to_specs(driver, max_steps=25):
+    """Скроллит разными способами, пока не появятся группы характеристик."""
+    for step in range(max_steps):
+        if driver.find_elements(By.CSS_SELECTOR, SEL["group"]):
+            return True
+        method = step % 4
+        try:
+            if method == 0:    # настоящее событие колеса мыши (лучше всего запускает ленивую подгрузку)
+                ActionChains(driver).scroll_by_amount(0, random.randint(400, 800)).perform()
+            elif method == 1:  # обычный JS-скролл
+                driver.execute_script("window.scrollBy(0, arguments[0]);", random.randint(400, 800))
+            elif method == 2:  # клавиатура
+                driver.find_element(By.TAG_NAME, "body").send_keys(Keys.PAGE_DOWN)
+            else:              # прыжок в случайное место страницы
+                driver.execute_script(
+                    "window.scrollTo(0, document.documentElement.scrollHeight * arguments[0]);",
+                    random.uniform(0.3, 0.8))
+        except Exception:
+            pass
+        time.sleep(random.uniform(0.8, 1.6))
+    return bool(driver.find_elements(By.CSS_SELECTOR, SEL["group"]))
+
 def expand_specs(driver):
     btns = driver.find_elements(By.CSS_SELECTOR, SEL["expand_btn"])
     if not btns:
@@ -184,32 +207,19 @@ def expand_specs(driver):
 
 
 def get_specs(driver, url):
-    if not open_page(driver, url, SEL["group"]):
+    if not open_page(driver, url, SEL["ready"]):
         raise RuntimeError("страница товара не загрузилась")
 
-    last_height = driver.execute_script("return document.body.scrollHeight")
-    scroll_attempts, no_change_count = 0, 0
-    while scroll_attempts < 15:
-        driver.execute_script(
-            f"window.scrollBy({{top: {random.randint(300, 700)}, behavior: 'smooth'}});")
-        time.sleep(random.uniform(0.8, 1.8))
+    # 2. скроллим, пока не появятся группы характеристик
+    found = scroll_to_specs(driver)
 
-        if len(driver.find_elements(By.CSS_SELECTOR, SEL["group"])) >= 3:
-            break
-
-        new_height = driver.execute_script("return document.body.scrollHeight")
-        if new_height == last_height:
-            no_change_count += 1
-            if no_change_count >= 2:
-                driver.execute_script("window.scrollBy({top: -200, behavior: 'smooth'});")
-                time.sleep(random.uniform(0.5, 1.0))
-                driver.execute_script("window.scrollBy({top: 400, behavior: 'smooth'});")
-                time.sleep(random.uniform(0.8, 1.5))
-                no_change_count = 0
-        else:
-            last_height = new_height
-            no_change_count = 0
-        scroll_attempts += 1
+    # 3. запасной путь: отдельная страница характеристик
+    if not found:
+        print("  Скролл не помог, открываю страницу характеристик напрямую")
+        driver.get(url.rstrip("/") + "/characteristics/")
+        found = wait_for(driver, SEL["group"], 20) or scroll_to_specs(driver, 15)
+    if not found:
+        raise RuntimeError("блок характеристик не появился")
 
     time.sleep(random.uniform(1.0, 2.0))
     expand_specs(driver)
