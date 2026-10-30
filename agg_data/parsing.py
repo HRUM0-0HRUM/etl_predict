@@ -8,6 +8,8 @@ from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
 import pandas as pd
 import undetected_chromedriver as uc
 from selenium.webdriver.common.by import By
+from selenium.webdriver.common.keys import Keys
+from selenium.webdriver.common.action_chains import ActionChains
 
 # ================= НАСТРОЙКИ =================
 BASE_URL = ("https://www.dns-shop.ru/catalog/17a8a01d16404e77/smartfony/"
@@ -22,8 +24,9 @@ SEARCH_URLS = [BASE_URL.format(b) for b in BRANDS]
 LINKS_FILE = "links.csv"
 OUT_FILE = "dns_smartphones.csv"
 
+STAGNANT_LIMIT = 3          # сколько итераций подряд без новых ссылок считаем концом списка
 MAX_PAGES = 30              # предохранитель для постраничного перехода (?p=2, ?p=3...)
-MAX_NEW_PER_SEGMENT = 600   # предохранитель на один бренд
+MAX_NEW_PER_SEGMENT = 300   # предохранитель на один бренд
 TRIM_DOM = True             # если число ссылок перестаёт расти раньше времени, поставьте False
 NO_IMAGES = True            # без картинок меньше памяти и трафика
 COLLECT_MORE = True         # True: дособрать ссылки по всем сегментам; False: взять links.csv как есть
@@ -118,7 +121,7 @@ def scroll_segment(driver, url, items, first=False):
         return
     stagnant = 0
     added = 0
-    while stagnant < 5 and added < MAX_NEW_PER_SEGMENT:
+    while stagnant < STAGNANT_LIMIT and added < MAX_NEW_PER_SEGMENT:
         for _ in range(4):
             driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
             time.sleep(random.uniform(1.0, 2.0))
@@ -153,12 +156,7 @@ def collect_links():
         print(f"\n=== Сегмент {n}/{len(SEARCH_URLS)}: {url} ===")
         driver = make_driver()
         try:
-            for page in range(1, MAX_PAGES + 1):
-                page_url = url if page == 1 else with_page(url, page)
-                before = len(items)
-                scroll_segment(driver, page_url, items, first=(n == 1 and page == 1))
-                if len(items) == before:    # новых ссылок нет: страницы кончились
-                    break
+            scroll_segment(driver, url, items, first=(n == 1))
         except Exception as e:
             print(f"Ошибка в сегменте {n}: {e}")
         finally:
