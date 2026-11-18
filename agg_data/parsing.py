@@ -11,32 +11,56 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.common.action_chains import ActionChains
 
-# ================= НАСТРОЙКИ =================
-BASE_URL = ("https://www.dns-shop.ru/catalog/17a8a01d16404e77/smartfony/"
-            "?stock=now-today-tomorrow-later&brand={}")
+BASE_URL = (
+    "https://www.dns-shop.ru/catalog/17a8a01d16404e77/smartfony/"
+    "?stock=now-today-tomorrow-later&brand={}"
+)
 
 BRANDS = [
-    "apple", "honor", "huawei", "poco", "realme", "samsung", "xiaomi", "google", "infinix", "iqoo", "motorola", "nothing", "oneplus", "oppo", "sharp", "sony", "tcl", "tecno", "vivo", "blackview", "cubot", "lava", "nubia", "oukitel", "unihertz", "kenshi", "rikor"
+    "apple",
+    "honor",
+    "huawei",
+    "poco",
+    "realme",
+    "samsung",
+    "xiaomi",
+    "google",
+    "infinix",
+    "iqoo",
+    "motorola",
+    "nothing",
+    "oneplus",
+    "oppo",
+    "sharp",
+    "sony",
+    "tcl",
+    "tecno",
+    "vivo",
+    "blackview",
+    "cubot",
+    "lava",
+    "nubia",
+    "oukitel",
+    "unihertz",
+    "kenshi",
+    "rikor",
 ]
 SEARCH_URLS = [BASE_URL.format(b) for b in BRANDS]
-
 
 LINKS_FILE = "links.csv"
 OUT_FILE = "dns_smartphones.csv"
 
-STAGNANT_LIMIT = 3          # сколько итераций подряд без новых ссылок считаем концом списка
-MAX_PAGES = 30              # предохранитель для постраничного перехода (?p=2, ?p=3...)
-MAX_NEW_PER_SEGMENT = 300   # предохранитель на один бренд
-TRIM_DOM = True             # если число ссылок перестаёт расти раньше времени, поставьте False
-NO_IMAGES = True            # без картинок меньше памяти и трафика
-COLLECT_MORE = False         # True: дособрать ссылки по всем сегментам; False: взять links.csv как есть
+STAGNANT_LIMIT = 3  # сколько итераций подряд без новых ссылок считаем концом списка
+MAX_NEW_PER_SEGMENT = 300  # предохранитель на один бренд
+TRIM_DOM = True  # если число ссылок перестаёт расти раньше времени, поставьте False
+COLLECT_MORE = False  # True: дособрать ссылки по всем сегментам; False: взять links.csv (то есть уже собранные ссылки) как есть
 
 SEL = {
     "card": "div.catalog-product",
     "link": "a.catalog-product__name",
     "price": "div.product-buy__price",
     "expand_btn": "button.product-characteristics__expand, a.product-characteristics__expand, "
-                  "div.product-characteristics__expand",
+    "div.product-characteristics__expand",
     "group": "div.product-characteristics__group",
     "group_title": ".product-characteristics__group-title",
     "spec_title": "div.product-characteristics__spec-title",
@@ -59,15 +83,16 @@ for (let i = 0; i < cs.length - 8; i++) cs[i].remove();
 """
 
 
-# ================= ОБЩИЕ ФУНКЦИИ =================
 def pause(a=3.0, b=7.0):
     time.sleep(random.uniform(a, b))
 
 
 def make_driver():
-    opts = uc.ChromeOptions()      # опции нельзя использовать повторно: создаём заново
-    if NO_IMAGES:
-        opts.add_argument("--blink-settings=imagesEnabled=false")
+    opts = (
+        uc.ChromeOptions()
+    )  # опции нельзя использовать повторно: создаём заново Почему?
+    opts.add_argument("--blink-settings=imagesEnabled=false")
+
     return uc.Chrome(options=opts)
 
 
@@ -85,8 +110,10 @@ def open_page(driver, url, css, ask=False):
     if wait_for(driver, css):
         return True
     if ask:
-        input("Элемент не появился за 45 с. Нажмите F5 в окне браузера, "
-              "дождитесь загрузки страницы и нажмите Enter...")
+        input(
+            "Элемент не появился за 45 с. Нажмите F5 в окне браузера, "
+            "дождитесь загрузки страницы и нажмите Enter..."
+        )
         return wait_for(driver, css, 30)
     return False
 
@@ -132,8 +159,11 @@ def scroll_segment(driver, url, items, first=False):
         new = 0
         for d in data:
             if d["url"] and d["url"] not in items:
-                items[d["url"]] = {"name": d["name"], "url": d["url"],
-                                   "price": parse_price(d["price"]) if d["price"] else None}
+                items[d["url"]] = {
+                    "name": d["name"],
+                    "url": d["url"],
+                    "price": parse_price(d["price"]) if d["price"] else None,
+                }
                 new += 1
         added += new
         stagnant = stagnant + 1 if new == 0 else 0
@@ -177,20 +207,28 @@ def scroll_to_specs(driver, max_steps=25):
             return True
         method = step % 4
         try:
-            if method == 0:    # настоящее событие колеса мыши (лучше всего запускает ленивую подгрузку)
-                ActionChains(driver).scroll_by_amount(0, random.randint(400, 800)).perform()
+            if (
+                method == 0
+            ):  # настоящее событие колеса мыши (лучше всего запускает ленивую подгрузку)
+                ActionChains(driver).scroll_by_amount(
+                    0, random.randint(400, 800)
+                ).perform()
             elif method == 1:  # обычный JS-скролл
-                driver.execute_script("window.scrollBy(0, arguments[0]);", random.randint(400, 800))
+                driver.execute_script(
+                    "window.scrollBy(0, arguments[0]);", random.randint(400, 800)
+                )
             elif method == 2:  # клавиатура
                 driver.find_element(By.TAG_NAME, "body").send_keys(Keys.PAGE_DOWN)
-            else:              # прыжок в случайное место страницы
+            else:  # прыжок в случайное место страницы
                 driver.execute_script(
                     "window.scrollTo(0, document.documentElement.scrollHeight * arguments[0]);",
-                    random.uniform(0.3, 0.8))
+                    random.uniform(0.3, 0.8),
+                )
         except Exception:
             pass
         time.sleep(random.uniform(0.8, 1.6))
     return bool(driver.find_elements(By.CSS_SELECTOR, SEL["group"]))
+
 
 def expand_specs(driver):
     btns = driver.find_elements(By.CSS_SELECTOR, SEL["expand_btn"])
@@ -228,7 +266,9 @@ def get_specs(driver, url):
     specs = {}
     for group in driver.find_elements(By.CSS_SELECTOR, SEL["group"]):
         try:
-            group_name = group.find_element(By.CSS_SELECTOR, SEL["group_title"]).text.strip()
+            group_name = group.find_element(
+                By.CSS_SELECTOR, SEL["group_title"]
+            ).text.strip()
         except Exception:
             group_name = ""
         for li in group.find_elements(By.CSS_SELECTOR, "ul li"):
@@ -267,14 +307,16 @@ def main():
             if item["url"] in done:
                 continue
 
-            if i > 1 and (i - 1) % 5 == 0:      # лёгкая очистка
+            if i > 1 and (i - 1) % 5 == 0:  # лёгкая очистка
                 try:
-                    driver.execute_script("window.localStorage.clear(); window.sessionStorage.clear();")
+                    driver.execute_script(
+                        "window.localStorage.clear(); window.sessionStorage.clear();"
+                    )
                     driver.delete_all_cookies()
                 except Exception:
                     pass
 
-            if i > 1 and (i - 1) % 15 == 0:     # плановый перезапуск браузера
+            if i > 1 and (i - 1) % 15 == 0:  # плановый перезапуск браузера
                 print(f"\n[Система] Плановый перезапуск браузера (обработано {i-1})...")
                 safe_quit(driver)
                 time.sleep(3)
@@ -296,7 +338,9 @@ def main():
                         try:
                             driver = make_driver()
                         except Exception as err:
-                            print(f"[Ошибка] Не удалось запустить браузер: {err}. Ждём 15 с...")
+                            print(
+                                f"[Ошибка] Не удалось запустить браузер: {err}. Ждём 15 с..."
+                            )
                             time.sleep(15)
                             driver = make_driver()
 
@@ -304,8 +348,13 @@ def main():
                 print(f"[{i}/{total}] Пропуск товара: {item['url']}")
                 continue
 
-            rows.append({**item, **specs,
-                         "scraped_at": datetime.now().isoformat(timespec="seconds")})
+            rows.append(
+                {
+                    **item,
+                    **specs,
+                    "scraped_at": datetime.now().isoformat(timespec="seconds"),
+                }
+            )
             print(f"[{i}/{total}] {item['name']} ({len(specs)} характеристик)")
             pd.DataFrame(rows).to_csv(OUT_FILE, index=False, encoding="utf-8-sig")
             pause(3.0, 7.0)
