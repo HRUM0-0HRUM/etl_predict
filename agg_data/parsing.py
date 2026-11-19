@@ -51,8 +51,6 @@ LINKS_FILE = "links.csv"
 OUT_FILE = "dns_smartphones.csv"
 
 STAGNANT_LIMIT = 3  # сколько итераций подряд без новых ссылок считаем концом списка
-MAX_NEW_PER_SEGMENT = 300  # предохранитель на один бренд
-TRIM_DOM = True  # если число ссылок перестаёт расти раньше времени, поставьте False
 COLLECT_MORE = False  # True: дособрать ссылки по всем сегментам; False: взять links.csv (то есть уже собранные ссылки) как есть
 
 SEL = {
@@ -83,14 +81,13 @@ for (let i = 0; i < cs.length - 8; i++) cs[i].remove();
 """
 
 
+# ОБЩИЕ ФУНКЦИИ
 def pause(a=3.0, b=7.0):
     time.sleep(random.uniform(a, b))
 
 
 def make_driver():
-    opts = (
-        uc.ChromeOptions()
-    )  # опции нельзя использовать повторно: создаём заново Почему?
+    opts = uc.ChromeOptions()
     opts.add_argument("--blink-settings=imagesEnabled=false")
 
     return uc.Chrome(options=opts)
@@ -110,10 +107,7 @@ def open_page(driver, url, css, ask=False):
     if wait_for(driver, css):
         return True
     if ask:
-        input(
-            "Элемент не появился за 45 с. Нажмите F5 в окне браузера, "
-            "дождитесь загрузки страницы и нажмите Enter..."
-        )
+        input("Элемент не появился за 45 с. Необходимо проверить страницу...")
         return wait_for(driver, css, 30)
     return False
 
@@ -123,13 +117,6 @@ def parse_price(text):
     return int(digits) if digits else None
 
 
-def with_page(url, n):
-    u = urlparse(url)
-    q = parse_qs(u.query)
-    q["p"] = [str(n)]
-    return urlunparse(u._replace(query=urlencode(q, doseq=True)))
-
-
 def safe_quit(driver):
     try:
         driver.quit()
@@ -137,23 +124,22 @@ def safe_quit(driver):
         pass
 
 
-# ================= ЭТАП 1: ССЫЛКИ =================
+# СБОР ССЫЛОК
 def save_links(items):
     pd.DataFrame(items.values()).to_csv(LINKS_FILE, index=False, encoding="utf-8-sig")
 
 
 def scroll_segment(driver, url, items, first=False):
-    """Открывает одну страницу выдачи и скроллит её, собирая карточки в items."""
+    # cкроллинг одной страницы
     if not open_page(driver, url, SEL["card"], ask=first):
         print(f"Не удалось открыть {url}")
         return
     stagnant = 0
-    added = 0
-    while stagnant < STAGNANT_LIMIT and added < MAX_NEW_PER_SEGMENT:
+    while stagnant < STAGNANT_LIMIT:
         for _ in range(4):
             driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-            time.sleep(random.uniform(1.0, 2.0))
-        time.sleep(random.uniform(2.0, 3.5))
+            pause(a=1.0, b=2.0)
+        pause(a=2.0, b=3.5)
 
         data = driver.execute_script(JS_HARVEST, SEL["card"], SEL["link"], SEL["price"])
         new = 0
@@ -165,18 +151,17 @@ def scroll_segment(driver, url, items, first=False):
                     "price": parse_price(d["price"]) if d["price"] else None,
                 }
                 new += 1
-        added += new
+
         stagnant = stagnant + 1 if new == 0 else 0
 
-        if TRIM_DOM:
-            driver.execute_script(JS_TRIM, SEL["card"])
+        driver.execute_script(JS_TRIM, SEL["card"])
 
         save_links(items)
         print(f"  Всего ссылок: {len(items)} (+{new})")
 
 
 def collect_links():
-    """ГЛАВНЫЙ ЦИКЛ ПО СТАРТОВЫМ ССЫЛКАМ: каждый бренд = свой браузер."""
+    # осуществление сбора ссылок на страницы товаров для всех брендов (вообще для всех товаров)
     items = {}
     if os.path.exists(LINKS_FILE):
         for r in pd.read_csv(LINKS_FILE).to_dict("records"):
@@ -184,7 +169,7 @@ def collect_links():
         print(f"Уже есть ссылок: {len(items)}")
 
     for n, url in enumerate(SEARCH_URLS, 1):
-        print(f"\n=== Сегмент {n}/{len(SEARCH_URLS)}: {url} ===")
+        print(f"\nСегмент {n}/{len(SEARCH_URLS)}: {url} ===")
         driver = make_driver()
         try:
             scroll_segment(driver, url, items, first=(n == 1))
@@ -199,9 +184,8 @@ def collect_links():
     return pd.DataFrame(items.values())
 
 
-# ================= ЭТАП 2: ХАРАКТЕРИСТИКИ =================
+# СБОР ХАРАКТЕРИСТИК
 def scroll_to_specs(driver, max_steps=25):
-    """Скроллит разными способами, пока не появятся группы характеристик."""
     for step in range(max_steps):
         if driver.find_elements(By.CSS_SELECTOR, SEL["group"]):
             return True
@@ -226,7 +210,7 @@ def scroll_to_specs(driver, max_steps=25):
                 )
         except Exception:
             pass
-        time.sleep(random.uniform(0.8, 1.6))
+        pause(0.8, 1.6)
     return bool(driver.find_elements(By.CSS_SELECTOR, SEL["group"]))
 
 
@@ -236,32 +220,32 @@ def expand_specs(driver):
         return
     btn = btns[0]
     driver.execute_script("arguments[0].scrollIntoView({block:'center'});", btn)
-    time.sleep(random.uniform(0.5, 1.2))
+    pause(0.5, 1.2)
     try:
         btn.click()
     except Exception:
         driver.execute_script("arguments[0].click();", btn)
-    time.sleep(random.uniform(1.0, 2.0))
+    pause(1.0, 2.0)
 
 
 def get_specs(driver, url):
     if not open_page(driver, url, SEL["ready"]):
         raise RuntimeError("страница товара не загрузилась")
 
-    # 2. скроллим, пока не появятся группы характеристик
+    # скроллим, пока не появятся группы характеристик
     found = scroll_to_specs(driver)
 
-    # 3. запасной путь: отдельная страница характеристик
+    # запасной путь: отдельная страница характеристик
     if not found:
-        print("  Скролл не помог, открываю страницу характеристик напрямую")
+        print("  Скролл не помог. Необходимо открыть страницу характеристик напрямую")
         driver.get(url.rstrip("/") + "/characteristics/")
         found = wait_for(driver, SEL["group"], 20) or scroll_to_specs(driver, 15)
     if not found:
         raise RuntimeError("блок характеристик не появился")
 
-    time.sleep(random.uniform(1.0, 2.0))
+    pause(1.0, 2.0)
     expand_specs(driver)
-    time.sleep(random.uniform(1.5, 2.5))
+    pause(1.5, 2.5)
 
     specs = {}
     for group in driver.find_elements(By.CSS_SELECTOR, SEL["group"]):
@@ -284,7 +268,7 @@ def get_specs(driver, url):
     return specs
 
 
-# ================= MAIN =================
+# MAIN
 def main():
     # ЭТАП 1: ссылки по всем стартовым URL
     if COLLECT_MORE or not os.path.exists(LINKS_FILE):
